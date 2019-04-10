@@ -1,0 +1,124 @@
+//this macro is intended to get the intensity of the head and shaft of a dendritic spine
+//and determine the ratio of intensities between them
+//as well as measure the width of the spine head 
+
+//this was developed for andrew C's project looking at Farp1
+//and spine remodeling associated w/ expression
+//right now it also looks at signal associated with a synaptic
+//marker in the channel next to the fill.
+
+//you don't need to open images, just select the folder with them in it (not nested)
+//I'd like to be able to automatically determine the number of channels
+//but in order to do that within imagej, as far as I can tell,
+//you've gotta have the image open, and that'd involve either opening
+//the first image and getting the numbers there then modifying the
+//the for() loop
+//this was developed and troubleshot within like 4h, so that wasn't
+//the priority at the time, and because I'm not using it regularly
+//doesn't seem worth modifying
+
+//this version of it can be adapted to images with any number of channels
+//because I had one that looked at one, another for two, and another for three
+
+sourceDir = getDirectory("single folder with source images");
+resultDir = getDirectory("folder for results");
+sourceList = getFileList(sourceDir);
+run("Set Measurements...", "area mean bounding feret's integrated limit redirect=None decimal=4");
+Dialog.create("Channel info");
+	Dialog.addNumber("how many channels initially",3,0,1,"channel/s");
+Dialog.show();
+
+numchannels = Dialog.getNumber();
+Dialog.create("What color channels?");
+	channels = newArray("Green","Red","Blue","Cyan");
+	for(c=0;c<numchannels;c++){
+		Dialog.addChoice("color",channels,channels[c]);
+		Dialog.addCheckbox("fill layer",false);
+	}
+Dialog.show();
+check = 1;
+chanArray = newArray();
+checkArray = newArray();
+for(b=0;b<numchannels;b++) {
+	chanArray = Array.concat(chanArray,Dialog.getChoice());
+	checkArray = Array.concat(checkArray,Dialog.getCheckbox());
+	if(checkArray[b]==true){
+		check = b+1;
+	}
+}
+
+headArray = newArray("Spine info	Mean Head Int(pix)	Area of head	Width	Height	Feret length	Feret Angle	Min Feret	Integrated density(um)	Measured head width");
+spineArray = newArray("Mean Shaft Int(pix)	Area of dendrite shaft	Integrated density(um)");
+synapseArray = newArray(chanArray[b-1]+" int");
+	
+print(headArray[0]+"		"+synapseArray[0]+"		"+spineArray[0]);
+arrayString = headArray[0]+"		"+synapseArray[0]+"		"+spineArray[0]+"\n";
+run("Channels Tool...");
+p=1;
+
+for(c=0;c<sourceList.length;c++)	{
+	open(sourceDir+sourceList[c]);
+	roiManager("Reset");
+	title = getTitle();
+	subtitle = substring(title,0,lastIndexOf(title,"."));
+	answer = "maybe";
+	n=1;
+	while(answer == "maybe")	{
+		Dialog.create("is there a usable spine?");
+			Dialog.setInsets(5, 10, 5);
+			Dialog.addString("yes or no","yes");
+		Dialog.show();
+		answer = Dialog.getString();
+		
+		while(answer == "yes")	{
+			setSlice(check);
+			run("Clear Results");
+			setTool("roundrect");
+			waitForUser("select spine head");
+			roiManager("Add");
+			run("Measure");
+			mean = getResult("Mean",0);
+			area = getResult("Area",0);
+			width = getResult("Width",0);
+			height = getResult("Height",0);
+			feret = getResult("Feret",0);
+			feretAngle = getResult("FeretAngle",0);
+			minFeret = getResult("MinFeret",0);
+			int = getResult("IntDen",0);
+			
+			run("Clear Results");
+			setTool("line");
+			waitForUser("select head width");
+			roiManager("Add");
+			run("Measure");
+			length = getResult("Length",0);
+			headArray = Array.concat(headArray,subtitle+"-"+n+"	"+mean+"	"+area+"	"+width+"	"+height+"	"+feret+"	"+feretAngle+"	"+minFeret+"	"+int+"	"+length);
+
+			run("Clear Results");
+			setSlice(numchannels);
+			run("Measure");
+			mean = getResult("Mean",0);
+			synapseArray = Array.concat(synapseArray,mean);
+
+			roiManager("Show All without labels");
+			run("Clear Results");
+			setSlice(check);
+			setTool("polygon"); 
+			waitForUser("select dendrite shaft");
+			roiManager("Add");
+			run("Measure");
+			mean = getResult("Mean",0);
+			area = getResult("Area",0);
+			int = getResult("IntDen",0);
+			spineArray = Array.concat(spineArray,""+mean+"	"+area+"	"+int);
+			print(headArray[p]+"		"+synapseArray[p]+"		"+spineArray[p]);
+			arrayString = arrayString+headArray[p]+"		"+synapseArray[p]+"		"+spineArray[p]+"\n";
+			n++;
+			p++;
+			answer = "maybe";
+		}
+	}
+	close();
+}
+selectWindow("Log");
+File.saveString(arrayString,resultDir+"spines.xls");
